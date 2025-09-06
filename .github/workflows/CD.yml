@@ -70,17 +70,51 @@ jobs:
           aws-region: us-west-2
 
 
-      - name: Update kubeconfig for EKS
+      - name: Ensure kubectl is present
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Prepare kubeconfig path
         run: |
-            aws eks update-kubeconfig \
-            --region $AWS_REGION \
-            --name project-cluster \
-            --kubeconfig "$KUBECONFIG"
+          export KUBECONFIG=~/.kube/config
+          mkdir -p ~/.kube
+          chmod 700 ~/.kube
+          echo "Using KUBECONFIG=$KUBECONFIG"
+
+      - name: Debug: show aws & env
+        run: |
+          echo "aws version: $(aws --version 2>&1)"
+          echo "AWS_REGION=${AWS_REGION:-not-set}"
+          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:+set}"
+          echo "KUBECONFIG=$KUBECONFIG"
+          # quick cluster endpoint check (helps detect permission/network issues)
+          aws eks describe-cluster --name project-cluster --region us-west-2 --query "cluster.endpoint" --output text || echo "describe-cluster failed"
+
+      - name: Update kubeconfig for EKS (write to ~/.kube/config)
+        run: |
+          set -euo pipefail
+          export KUBECONFIG=~/.kube/config
+          # ensure AWS creds are present
+          if ! aws sts get-caller-identity >/dev/null 2>&1; then
+            echo "AWS credentials not working - aborting"
+            aws sts get-caller-identity || true
+            exit 2
+          fi
+          echo "Calling aws eks update-kubeconfig..."
+          aws eks update-kubeconfig --region us-west-2 --name project-cluster --kubeconfig "$KUBECONFIG"
+          echo "update-kubeconfig exit=$?"
+          echo "Wrote kubeconfig to $KUBECONFIG"
+          ls -l "$KUBECONFIG"
+          sed -n '1,120p' "$KUBECONFIG" || true
 
       - name: Validate Kubernetes connection
         run: |
-           kubectl version --kubeconfig "$KUBECONFIG"
-           kubectl get nodes --kubeconfig "$KUBECONFIG"
+          export KUBECONFIG=~/.kube/config
+          kubectl version --short
+          kubectl cluster-info || true
+          kubectl get nodes --no-headers -o wide
+      
 
       - name: Install Node.js
         uses: actions/setup-node@v4
