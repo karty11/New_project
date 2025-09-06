@@ -83,13 +83,13 @@ jobs:
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
           echo "KUBECONFIG set to $HOME/.kube/config (persisted to GITHUB_ENV)"
 
-      - name:
-          Debug: show aws & env (quick check)
-        run: |
-          echo "aws version: $(aws --version 2>&1 || true)"
-          echo "GITHUB_ENV KUBECONFIG: $KUBECONFIG"
-          aws sts get-caller-identity --output text || echo "sts identity failed"
-          aws eks describe-cluster --name project-cluster --region us-west-2 --query "cluster.endpoint" --output text || echo "describe-cluster failed (permissions/network)"
+#      - name:
+#          Debug: show aws & env (quick check)
+#        run: |
+#          echo "aws version: $(aws --version 2>&1 || true)"
+#          echo "GITHUB_ENV KUBECONFIG: $KUBECONFIG"
+#          aws sts get-caller-identity --output text || echo "sts identity failed"
+#          aws eks describe-cluster --name project-cluster --region us-west-2 --query "cluster.endpoint" --output text || echo "describe-cluster failed (permissions/network)"
 
       - name: Update kubeconfig for EKS (write to ~/.kube/config)
         run: |
