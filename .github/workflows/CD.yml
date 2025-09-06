@@ -194,7 +194,7 @@ jobs:
 
       - name: Apply Argo CD Application manifest
         run: |
-          kubectl apply -f manifests/argocd-app-bankapp.yaml
+          kubectl apply -f manifest/argocd-app-bankapp.yaml
 
       - name: Show created manifest (debug)
         run: |
