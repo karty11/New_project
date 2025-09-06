@@ -60,7 +60,7 @@ jobs:
         run: |
           aws eks update-kubeconfig \
             --region us-west-2 \
-            --name <your-eks-cluster-name>
+            --name project-cluster
 
       - name: Add Argo Helm repo & update
         run: |
