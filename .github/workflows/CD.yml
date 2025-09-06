@@ -1,10 +1,8 @@
-
-
 name: CD Pipeline (install argocd, push app, update image tag)
 
 on:
   workflow_run:
-    workflows: ["CI Pipeline"]
+    workflows: [ "CI Pipeline" ]
     types:
       - completed
 
