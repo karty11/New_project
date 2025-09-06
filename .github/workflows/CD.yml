@@ -66,8 +66,9 @@ jobs:
 
       - name: Configure kubeconfig
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.EKS_KUBECONFIG }}" > $HOME/.kube/config
+          export KUBECONFIG=$RUNNER_TEMP/kubeconfig.yaml
+          echo "${{ secrets.EKS_KUBECONFIG }}" > $KUBECONFIG
+          aws eks update-kubeconfig --region us-west-2 --name my-eks-cluster --kubeconfig $KUBECONFIG
 
       - name: Configure kubectl for EKS
         run: |
