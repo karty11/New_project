@@ -14,7 +14,7 @@ on:
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+#    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: self-hosted
     permissions:
       contents: write   # needed to push commits with GITHUB_TOKEN (or use PAT)
@@ -120,26 +120,28 @@ jobs:
 
       - name: Update Helm values.yaml with new image tag
         env:
-         IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
         run: |
-    # Ensure file exists
-         if [ ! -f helm/bankapp-chart/values.yaml ]; then
-         echo "ERROR: helm/bankapp-chart/values.yaml not found"
-         exit 1
-         fi
-    # Update image.tag (works if structure is image: { repository, tag })
-         yq e -i '.image.tag = strenv(IMAGE_TAG)' helm/bankapp-chart/values.yaml
-         git add helm/bankapp-chart/values.yaml
-         if git diff --cached --quiet; then
-         echo "No change to values.yaml (image tag already up-to-date)."
-         else
-         git commit -m "ci: bump bankapp image tag to ${IMAGE_TAG}"
-         if [ -n "${{ secrets.PERSONAL_ACCESS_TOKEN }}" ]; then
-         git remote set-url origin https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${{ github.repository }}.git
-         fi
-         git push origin HEAD:${BRANCH}
-         echo "Pushed updated values.yaml with image tag ${IMAGE_TAG}."
-         fi
+            # Ensure file exists
+            if [ ! -f helm/bankapp-chart/values.yaml ]; then
+              echo "ERROR: helm/bankapp-chart/values.yaml not found"
+              exit 1
+            fi
+            
+            # Update image.tag (works if structure is image: { repository, tag })
+            yq e -i '.image.tag = strenv(IMAGE_TAG)' helm/bankapp-chart/values.yaml
+            git add helm/bankapp-chart/values.yaml
+            
+            if git diff --cached --quiet; then
+              echo "No change to values.yaml (image tag already up-to-date)."
+            else
+              git commit -m "ci: bump bankapp image tag to ${IMAGE_TAG}"
+              if [ -n "${{ secrets.PERSONAL_ACCESS_TOKEN }}" ]; then
+                git remote set-url origin https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/${{ github.repository }}.git
+              fi
+              git push origin HEAD:${BRANCH}
+              echo "Pushed updated values.yaml with image tag ${IMAGE_TAG}."
+            fi
 
       - name: Print Argo CD initial admin password (for reference)
         run: |
