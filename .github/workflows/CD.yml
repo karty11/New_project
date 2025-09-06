@@ -107,10 +107,9 @@ jobs:
           ls -l "$KUBECONFIG" || true
           sed -n '1,60p' "$KUBECONFIG" || true
 
-      - name: Validate Kubernetes connection
+      - name: Verify Kubernetes cluster
         run: |
-          # KUBECONFIG is present in the environment for this step
-          kubectl version --short
+          kubectl version --output=yaml
           kubectl cluster-info || true
           kubectl get nodes --no-headers -o wide
 
