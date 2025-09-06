@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bankapp-chart
+description: A Helm chart for deploying MySQL and the Bank Java App
+type: application
+version: 0.1.0
+appVersion: "1.0"

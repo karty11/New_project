@@ -1,0 +1,35 @@
+# deploy/argocd/argocd-values.yaml
+server:
+  # Expose Argo CD API/UI. Use LoadBalancer for public access in EKS, or ClusterIP/Ingress for private.
+  service:
+    type: LoadBalancer   # Change to ClusterIP if using ingress or port-forwarding
+  extraArgs: []
+
+configs:
+
+  secret:
+    argocdServerAdminPassword: ""
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+applicationController:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+
+rbac:
+  create: true
+
+

@@ -1,0 +1,15 @@
+replicaCount: 1
+
+image:
+  repository: karty11/newbankapp
+  tag: latest
+
+mysql:
+  rootPassword: "Test@123"
+  database: "bankappdb"
+
+service:
+  type: LoadBalancer
+  port: 80
+
+resources: {}

@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bankapp
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: 'https://github.com/karty11/New_project.git'
+    path: 'helm/bankapp-chart'
+    targetRevision: main
+
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: devproject
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
