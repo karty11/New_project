@@ -75,6 +75,7 @@ jobs:
         run: |
            kubectl version --kubeconfig "$KUBECONFIG"
            kubectl get nodes --kubeconfig "$KUBECONFIG"
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -105,14 +106,19 @@ jobs:
         run: |
           kubectl create ns argocd || echo "namespace argocd already exists"
 
-      - name: Install/Upgrade Argo CD via Helm (idempotent)
+#      - name: Install/Upgrade Argo CD via Helm (idempotent)
+#        run: |
+#          helm upgrade --install argocd argo/argo-cd \
+#            --namespace argocd \
+#            --version 7.6.9 \
+#            -f deploy/argocd/argocd-values.yaml \
+#            --kubeconfig "$KUBECONFIG" \
+#            --wait --timeout 10m
+      - name: Install Argo CD via Helm
         run: |
-          helm upgrade --install argocd argo/argo-cd \
-            --namespace argocd \
-            --version 7.6.9 \
-            -f deploy/argocd/argocd-values.yaml \
-            --kubeconfig "$KUBECONFIG" \
-            --wait --timeout 10m
+            helm upgrade --install argocd argo/argo-cd \
+             --namespace argocd --create-namespace \
+             --values helm/bankapp-chart/argocd-values.yaml
 
       - name: Wait for argocd components ready (server may be ClusterIP or LB)
         run: |

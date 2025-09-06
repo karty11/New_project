@@ -1,0 +1,11 @@
+server:
+  service:
+    type: LoadBalancer
+  ingress:
+    enabled: false
+
+configs:
+  cm:
+    application.instanceLabelKey: argocd.argoproj.io/instance
+  rbac:
+    policy.default: role:readonly
