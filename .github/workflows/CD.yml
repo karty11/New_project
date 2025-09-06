@@ -64,18 +64,18 @@ jobs:
         with:
             version: latest
 
-      - name: Configure kubeconfig
+      - name: Update kubeconfig for EKS
         run: |
-          export KUBECONFIG=$RUNNER_TEMP/kubeconfig.yaml
-          echo "${{ secrets.EKS_KUBECONFIG }}" > $KUBECONFIG
-          aws eks update-kubeconfig --region us-west-2 --name my-eks-cluster --kubeconfig $KUBECONFIG
+            aws eks update-kubeconfig \
+            --region $AWS_REGION \
+            --name my-eks-cluster \
+            --kubeconfig "$KUBECONFIG"
 
-      - name: Configure kubectl for EKS
+      - name: Validate Kubernetes connection
         run: |
-          aws eks update-kubeconfig --region us-west-2 --name my-eks-cluster
-          # basic smoke checks
-          kubectl version --short
-          kubectl get nodes --no-headers
+           kubectl version --kubeconfig "$KUBECONFIG"
+           kubectl get nodes --kubeconfig "$KUBECONFIG"
+
 
       - name: Add Argo Helm repo & update
         run: |
@@ -88,12 +88,11 @@ jobs:
 
       - name: Install/Upgrade Argo CD via Helm (idempotent)
         run: |
-          # Use values file in the repo at deploy/argocd/argocd-values.yaml
-          # Helm will install or upgrade depending on existing release state
           helm upgrade --install argocd argo/argo-cd \
             --namespace argocd \
             --version 7.6.9 \
             -f deploy/argocd/argocd-values.yaml \
+            --kubeconfig "$KUBECONFIG" \
             --wait --timeout 10m
 
       - name: Wait for argocd components ready (server may be ClusterIP or LB)
