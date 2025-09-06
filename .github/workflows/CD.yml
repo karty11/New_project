@@ -196,11 +196,11 @@ jobs:
         run: |
           kubectl apply -f manifest/argocd-app-bankapp.yaml
 
-      - name: Show created manifest (debug)
-        run: |
-         echo "==== manifests/argocd-app-bankapp.yaml ===="
-         cat manifests/argocd-app-bankapp.yaml
-         echo "==========================================="
+#      - name: Show created manifest (debug)
+#        run: |
+#         echo "==== manifests/argocd-app-bankapp.yaml ===="
+#         cat manifests/argocd-app-bankapp.yaml
+#         echo "==========================================="
 
       - name: Update Helm values.yaml with new image tag
         env:
