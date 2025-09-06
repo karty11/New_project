@@ -210,8 +210,6 @@ jobs:
         run: |
           set -euo pipefail
           set -x
-
-          
           git push origin "HEAD:${BRANCH}"
           echo "Pushed updated values.yaml with image tag ${IMAGE_TAG} to ${BRANCH}."
 
