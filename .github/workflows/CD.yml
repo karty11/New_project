@@ -71,9 +71,10 @@ jobs:
 
       - name: Configure kubectl for EKS
         run: |
-          aws eks update-kubeconfig \
-            --region us-west-2 \
-            --name project-cluster
+          aws eks update-kubeconfig --region us-west-2 --name my-eks-cluster
+          # basic smoke checks
+          kubectl version --short
+          kubectl get nodes --no-headers
 
       - name: Add Argo Helm repo & update
         run: |
