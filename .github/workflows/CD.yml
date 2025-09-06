@@ -75,7 +75,26 @@ jobs:
         run: |
            kubectl version --kubeconfig "$KUBECONFIG"
            kubectl get nodes --kubeconfig "$KUBECONFIG"
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.1
+
+      - name: Install Terragrunt
+        run: |
+          curl -L https://github.com/gruntwork-io/terragrunt/releases/download/v0.67.4/terragrunt_linux_amd64 -o terragrunt
+          chmod +x terragrunt
+          sudo mv terragrunt /usr/local/bin/
+
+      - name: Check versions
+        run: |
+          terraform -version
+          terragrunt -version
 
       - name: Add Argo Helm repo & update
         run: |
