@@ -56,6 +56,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
 
+      - name: Configure kubectl for EKS
+        run: |
+          aws eks update-kubeconfig \
+            --region us-west-2 \
+            --name <your-eks-cluster-name>
+
       - name: Add Argo Helm repo & update
         run: |
           helm repo add argo https://argoproj.github.io/argo-helm || true
