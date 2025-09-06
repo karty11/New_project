@@ -88,16 +88,18 @@ jobs:
           sudo mv argocd /usr/local/bin/argocd
 
       - name: Trigger Argo CD sync
-        if: ${{ secrets.ARGOCD_SERVER != '' && secrets.ARGOCD_AUTH_TOKEN != '' }}
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-          argocd app sync bankapp \
-            --server $ARGOCD_SERVER \
-            --auth-token $ARGOCD_AUTH_TOKEN \
-            --grpc-web --insecure --wait
-      
+          if [ -n "$ARGOCD_SERVER" ] && [ -n "$ARGOCD_AUTH_TOKEN" ]; then
+            argocd app sync bankapp \
+              --server "$ARGOCD_SERVER" \
+              --auth-token "$ARGOCD_AUTH_TOKEN" \
+              --grpc-web --insecure --wait
+          else
+            echo "Skipping ArgoCD sync (missing secrets)"
+          fi
 
       - name: Compute target branch
         id: branch
