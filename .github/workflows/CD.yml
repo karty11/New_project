@@ -74,7 +74,7 @@ jobs:
         run: |
             aws eks update-kubeconfig \
             --region $AWS_REGION \
-            --name my-eks-cluster \
+            --name project-cluster \
             --kubeconfig "$KUBECONFIG"
 
       - name: Validate Kubernetes connection
