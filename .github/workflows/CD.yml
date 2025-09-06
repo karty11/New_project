@@ -1,11 +1,13 @@
-name: CD Pipeline (install argocd, push app, update image tag)
+name: CD Pipeline
 
 on:
   workflow_run:
     workflows: [ "CI Pipeline" ]
     types:
       - completed
-
+  push:
+     branches:
+       - main
 jobs:
   deploy:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
