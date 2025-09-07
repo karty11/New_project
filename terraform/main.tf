@@ -13,11 +13,21 @@ locals {
   oidc_sub_key      = "${local.oidc_provider_url}:sub"
 }
 
-resource "aws_iam_openid_connect_provider" "eks" {
-  url             = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["data.external.oidc_thumbprint.result.thumbprin"]
+data "tls_certificate" "oidc" {
+  url = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
 }
+
+resource "aws_iam_openid_connect_provider" "eks" {
+  url = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
+  client_id_list = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.oidc.sha1_fingerprint]
+}
+# }
+# resource "aws_iam_openid_connect_provider" "eks" {
+#   url             = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
+#   client_id_list  = ["sts.amazonaws.com"]
+#   thumbprint_list = [data.external.oidc_thumbprint.result.["thumbprint"]]
+# }
 
 data "aws_iam_policy_document" "irsa_assume_role" {
   statement {
