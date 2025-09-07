@@ -5,6 +5,7 @@ variable "aws_region" {
 
 variable "cluster_name" {
   type = string
+  default = "project-cluster"
 }
 
 variable "eks_sa_namespace" {
