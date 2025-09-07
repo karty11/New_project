@@ -17,7 +17,7 @@ jobs:
     env:
       REPO_URL: "https://github.com/karty11/New_project.git"
       AWS_REGION: "us-west-2"
-      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      EKS_CLUSTER_NAME: "project-cluster"
       SECRETS_MANAGER_NAME: "bankapp/mysql"
       IMAGE_TAG: ${{ github.event.workflow_run.head_commit.id || github.sha }}
       TF_DIR: "terraform"
@@ -125,7 +125,7 @@ jobs:
             exit 1
           fi
           terraform init -input=false
-          terraform apply -auto-approve -input=false -var="cluster_name=${EKS_CLUSTER_NAME}" -var="aws_region=${AWS_REGION}"
+          terraform apply -auto-approve -input=false -var="cluster_name=${project-cluster}" -var="aws_region=${AWS_REGION}"
           terraform output -json > tfoutputs.json
           IAM_ROLE_ARN=$(jq -r '.iam_role_arn.value' tfoutputs.json)
           if [ -z "$IAM_ROLE_ARN" ] || [ "$IAM_ROLE_ARN" = "null" ]; then
