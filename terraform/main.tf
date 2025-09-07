@@ -1,3 +1,8 @@
+
+provider "aws" {
+  region = var.aws_region
+}
+
 data "aws_eks_cluster" "cluster" {
   name = var.cluster_name
 }
@@ -46,11 +51,27 @@ data "aws_iam_policy_document" "irsa_assume_role" {
 }
 
 resource "aws_iam_role" "external_secrets_irsa" {
-  name               = "external-secrets-irsa"
-  assume_role_policy = data.aws_iam_policy_document.irsa_assume_role.json
-  tags = {
-    "Name" = "external-secrets-irsa"
-  }
+  name = "external-secrets-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Federated = aws_iam_openid_connect_provider.eks.arn   # <-- federated OIDC provider here
+        }
+        Action = "sts:AssumeRoleWithWebIdentity"
+        Condition = {
+          StringEquals = {
+            # replace <oidc-provider-host> with issuer host without https://
+            # e.g. "oidc.eks.<region>.amazonaws.com/id/XXXXXXXXXXXX:sub" = "system:serviceaccount:<namespace>:<sa-name>"
+            (local.oidc_sub_key) = "system:serviceaccount:external-secrets:external-secrets"
+          }
+        }
+      }
+    ]
+  })
 }
 
 data "aws_iam_policy_document" "external_secrets_policy" {
@@ -75,9 +96,30 @@ data "aws_iam_policy_document" "external_secrets_policy" {
   }
 }
 
-
 resource "aws_iam_role_policy" "external_secrets_access" {
-  name   = "external-secrets-access"
-  role   = aws_iam_role.external_secrets_irsa.id
-  policy = data.aws_iam_policy_document.irsa_assume_role.json
+  name = "external-secrets-access"
+  role = aws_iam_role.external_secrets_irsa.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid = "AllowReadSecrets"
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:my-secret-*"
+      },
+      {
+        Sid = "AllowKMSDecryptIfNeeded"
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*" # narrow this down to the KMS key ARN if you can
+      }
+    ]
+  })
 }
