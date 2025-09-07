@@ -223,6 +223,10 @@ jobs:
             kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
             kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
           fi
+      - name: Install bankapp DB ExternalSecret & ClusterSecretStore
+        run: |
+          kubectl apply -f helm\bankapp-chart\templates\clustersecretstore.yaml
+          kubectl apply -f helm\bankapp-chart\templates\externalsecret-db.yaml
 
       - name: Wait for ExternalSecret to produce k8s Secret
         run: |
