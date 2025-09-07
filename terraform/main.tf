@@ -25,20 +25,31 @@ data "aws_caller_identity" "current" {}
 
 locals {
   oidc_issuer = replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")
+  oidc_domain = regex("^https://([^/]+)/.*", local.oidc_issuer)[0]
+}
+data "external" "oidc_thumbprint" {
+  program = ["bash", "-c", <<EOT
+    set -euo pipefail
+    domain="${local.oidc_domain}"
+    cert=$(mktemp)
+    # fetch cert
+    echo | openssl s_client -showcerts -connect "${domain}:443" 2>/dev/null \
+      | openssl x509 -outform PEM > "$cert"
+    # fingerprint
+    thumbprint=$(openssl x509 -in "$cert" -fingerprint -noout -sha1 \
+      | cut -d"=" -f2 | sed 's/://g' | tr '[:upper:]' '[:lower:]')
+    rm -f "$cert"
+    jq -n --arg thumbprint "$thumbprint" '{"thumbprint":$thumbprint}'
+  EOT
+  ]
 }
 
-# Create OIDC provider (only if you don't already have one)
 resource "aws_iam_openid_connect_provider" "eks" {
-  url = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
-  client_id_list = ["sts.amazonaws.com"]
-
-  # You should provide the thumbprint for the OIDC provider cert.
-  # Get it by: openssl s_client -showcerts -servername <oidc_host> -connect <oidc_host>:443 2>/dev/null | \
-  #    openssl x509 -fingerprint -noout -sha1 | sed -E 's/.*=//' | sed 's/://g'
-  thumbprint_list = [var.oidc_thumbprint]
+  url             = local.oidc_issuer
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.external.oidc_thumbprint.result.thumbprint]
 }
 
-# IAM role assume trust for the serviceAccount system:serviceaccount:<namespace>:<name>
 data "aws_iam_policy_document" "irsa_assume_role" {
   statement {
     effect = "Allow"
@@ -52,7 +63,7 @@ data "aws_iam_policy_document" "irsa_assume_role" {
 
     condition {
       test     = "StringEquals"
-      variable = "${local.oidc_issuer}:sub"
+      variable = "${replace(local.oidc_issuer, "https://", "")}:sub"
       values   = ["system:serviceaccount:${var.eks_sa_namespace}:${var.eks_sa_name}"]
     }
   }
@@ -66,7 +77,6 @@ resource "aws_iam_role" "external_secrets_role" {
   }
 }
 
-# Inline policy granting read access to Secrets Manager and SSM (adjust Resource ARNs to tighten)
 data "aws_iam_policy_document" "external_secrets_policy" {
   statement {
     effect = "Allow"
@@ -95,3 +105,73 @@ resource "aws_iam_role_policy" "external_secrets_role_policy" {
   role   = aws_iam_role.external_secrets_role.id
   policy = data.aws_iam_policy_document.external_secrets_policy.json
 }
+
+
+# # Create OIDC provider (only if you don't already have one)
+# resource "aws_iam_openid_connect_provider" "eks" {
+#   url = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
+#   client_id_list = ["sts.amazonaws.com"]
+#
+#   # You should provide the thumbprint for the OIDC provider cert.
+#   # Get it by: openssl s_client -showcerts -servername <oidc_host> -connect <oidc_host>:443 2>/dev/null | \
+#   #    openssl x509 -fingerprint -noout -sha1 | sed -E 's/.*=//' | sed 's/://g'
+#   thumbprint_list = [var.oidc_thumbprint]
+# }
+#
+# # IAM role assume trust for the serviceAccount system:serviceaccount:<namespace>:<name>
+# data "aws_iam_policy_document" "irsa_assume_role" {
+#   statement {
+#     effect = "Allow"
+#
+#     principals {
+#       type        = "Federated"
+#       identifiers = [aws_iam_openid_connect_provider.eks.arn]
+#     }
+#
+#     actions = ["sts:AssumeRoleWithWebIdentity"]
+#
+#     condition {
+#       test     = "StringEquals"
+#       variable = "${local.oidc_issuer}:sub"
+#       values   = ["system:serviceaccount:${var.eks_sa_namespace}:${var.eks_sa_name}"]
+#     }
+#   }
+# }
+#
+# resource "aws_iam_role" "external_secrets_role" {
+#   name               = "external-secrets-role-${var.cluster_name}"
+#   assume_role_policy = data.aws_iam_policy_document.irsa_assume_role.json
+#   tags = {
+#     "eks-irsa" = "external-secrets"
+#   }
+# }
+#
+# # Inline policy granting read access to Secrets Manager and SSM (adjust Resource ARNs to tighten)
+# data "aws_iam_policy_document" "external_secrets_policy" {
+#   statement {
+#     effect = "Allow"
+#     actions = [
+#       "secretsmanager:GetSecretValue",
+#       "secretsmanager:DescribeSecret",
+#       "secretsmanager:ListSecretVersionIds",
+#       "secretsmanager:ListSecrets"
+#     ]
+#     resources = ["*"]
+#   }
+#
+#   statement {
+#     effect = "Allow"
+#     actions = [
+#       "ssm:GetParameter",
+#       "ssm:GetParameters",
+#       "ssm:GetParametersByPath"
+#     ]
+#     resources = ["*"]
+#   }
+# }
+#
+# resource "aws_iam_role_policy" "external_secrets_role_policy" {
+#   name   = "ExternalSecretsAccessPolicy"
+#   role   = aws_iam_role.external_secrets_role.id
+#   policy = data.aws_iam_policy_document.external_secrets_policy.json
+# }
