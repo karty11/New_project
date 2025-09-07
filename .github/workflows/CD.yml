@@ -19,7 +19,6 @@ jobs:
       SECRETS_MANAGER_NAME: "bankapp/mysql"
       IMAGE_TAG: ${{ github.event.workflow_run.head_commit.id || github.sha }}
       TF_DIR: "terraform"
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
