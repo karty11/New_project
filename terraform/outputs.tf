@@ -5,3 +5,7 @@ output "iam_role_arn" {
 output "oidc_provider" {
   value = aws_iam_openid_connect_provider.eks.url
 }
+
+output "cluster_name_debug" {
+  value = var.cluster_name
+}
