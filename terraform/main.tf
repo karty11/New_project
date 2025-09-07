@@ -33,19 +33,16 @@ data "external" "oidc_thumbprint" {
   program = [
     "bash",
     "-c",
-    <<-EOT
-      set -euo pipefail
-      domain="${local.oidc_domain}"
-      cert_tmp="$(mktemp)"
-      echo | openssl s_client -showcerts -connect "${domain}:443" 2>/dev/null \
-        | openssl x509 -outform PEM > "${cert_tmp}"
-      thumbprint=$(openssl x509 -in "${cert_tmp}" -fingerprint -noout -sha1 \
-        | cut -d'=' -f2 | sed 's/://g' | tr '[:upper:]' '[:lower:]')
-      rm -f "${cert_tmp}"
-      jq -n --arg t "${thumbprint}" '{"thumbprint":$t}'
-    EOT
+    "domain=\"$1\"; cert_tmp=$(mktemp); \
+    echo | openssl s_client -showcerts -connect \"$1:443\" 2>/dev/null | \
+    openssl x509 -outform PEM > \"$cert_tmp\"; \
+    thumbprint=$(openssl x509 -in \"$cert_tmp\" -fingerprint -noout -sha1 | cut -d'=' -f2 | sed 's/://g' | tr '[:upper:]' '[:lower:]'); \
+    rm -f \"$cert_tmp\"; \
+    jq -n --arg t \"$thumbprint\" '{\"thumbprint\":$t}'",
+    local.oidc_domain
   ]
 }
+
 resource "aws_iam_openid_connect_provider" "eks" {
   url             = local.oidc_issuer
   client_id_list  = ["sts.amazonaws.com"]

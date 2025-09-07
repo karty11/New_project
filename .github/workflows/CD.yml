@@ -60,6 +60,10 @@ jobs:
             tar -xzf helm.tar.gz
             sudo mv linux-amd64/helm /usr/local/bin/helm
           fi
+      - name: Ensure openssl & jq installed
+        run: |
+         sudo apt-get update -y
+         sudo apt-get install -y openssl jq
 
       - name: Ensure kubectl (action)
         uses: azure/setup-kubectl@v3
