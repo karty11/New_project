@@ -143,6 +143,26 @@ jobs:
         run: |
           kubectl create ns external-secrets || echo "namespace external-secrets already exists"
 
+      - name: Pre-clean External Secrets CRDs (if unmanaged)
+        run: |
+          set -euo pipefail
+          echo "Checking for unmanaged External Secrets CRDs..."
+          unmanaged_crds=0
+          for crd in externalsecrets.external-secrets.io secretstores.external-secrets.io clustersecretstores.external-secrets.io; do
+            if kubectl get crd "$crd" >/dev/null 2>&1; then
+              echo "Found CRD: $crd"
+              owner=$(kubectl get crd "$crd" -o json | jq -r '.metadata.annotations["meta.helm.sh/release-name"] // empty')
+              if [ -z "$owner" ]; then
+                echo "CRD $crd is unmanaged — deleting"
+                kubectl delete crd "$crd"
+                unmanaged_crds=$((unmanaged_crds+1))
+              else
+                echo "CRD $crd is already managed by Helm ($owner)"
+              fi
+            fi
+          done
+          echo "Unmanaged CRDs cleaned: $unmanaged_crds"
+
       - name: Install External Secrets Operator via Helm (with CRDs)
         run: |
           helm repo add external-secrets https://charts.external-secrets.io
