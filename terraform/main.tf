@@ -24,26 +24,28 @@ data "aws_eks_cluster_auth" "eks_auth" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  oidc_issuer = replace(data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer, "https://", "")
+  oidc_issuer = data.aws_eks_cluster.cluster.identity[0].oidc[0].issuer
+  # extract only the domain portion (e.g. oidc.eks.us-west-2.amazonaws.com)
   oidc_domain = regex("^https://([^/]+)/.*", local.oidc_issuer)[0]
 }
+
 data "external" "oidc_thumbprint" {
-  program = ["bash", "-c", <<EOT
-    set -euo pipefail
-    domain="${local.oidc_domain}"
-    cert=$(mktemp)
-    # fetch cert
-    echo | openssl s_client -showcerts -connect "${domain}:443" 2>/dev/null \
-      | openssl x509 -outform PEM > "$cert"
-    # fingerprint
-    thumbprint=$(openssl x509 -in "$cert" -fingerprint -noout -sha1 \
-      | cut -d"=" -f2 | sed 's/://g' | tr '[:upper:]' '[:lower:]')
-    rm -f "$cert"
-    jq -n --arg thumbprint "$thumbprint" '{"thumbprint":$thumbprint}'
-  EOT
+  program = [
+    "bash",
+    "-c",
+    <<-EOT
+      set -euo pipefail
+      domain="${local.oidc_domain}"
+      cert_tmp="$(mktemp)"
+      echo | openssl s_client -showcerts -connect "${domain}:443" 2>/dev/null \
+        | openssl x509 -outform PEM > "${cert_tmp}"
+      thumbprint=$(openssl x509 -in "${cert_tmp}" -fingerprint -noout -sha1 \
+        | cut -d'=' -f2 | sed 's/://g' | tr '[:upper:]' '[:lower:]')
+      rm -f "${cert_tmp}"
+      jq -n --arg t "${thumbprint}" '{"thumbprint":$t}'
+    EOT
   ]
 }
-
 resource "aws_iam_openid_connect_provider" "eks" {
   url             = local.oidc_issuer
   client_id_list  = ["sts.amazonaws.com"]
