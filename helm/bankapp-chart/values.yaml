@@ -9,3 +9,22 @@ service:
   type: LoadBalancer
   port: 80
 resources: {}
+
+externalSecrets:
+  enabled: true
+  # name of k8s Secret to be created by ExternalSecret:
+  k8sSecretName: bankapp-db-credentials
+  # name of secret in AWS Secrets Manager (or SSM) that holds DB creds
+  # expected keys inside AWS secret: username, password
+  providerSecretName: bankapp/mysql     # example: "bankapp/mysql" in Secrets Manager
+  # sync behavior: Create k8s Secret with stringData keys mapping
+  refreshInterval: 1m
+  # AWS region for SecretStore
+  awsRegion: us-west-2
+
+  irsa:
+    enabled: true
+    namespace: external-secrets         # namespace where operator runs (change if different)
+    serviceAccountName: external-secrets-sa
+    # Set to the role ARN you create (placeholder here)
+    iamRoleArn: arn:aws:iam::439499528500:role/external-secrets-role

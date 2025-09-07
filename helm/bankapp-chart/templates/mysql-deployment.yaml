@@ -13,14 +13,62 @@ spec:
       labels:
         app: mysql
     spec:
-      containers:
-        - image: mysql:8
-          name: mysql
-          env:
+       containers:
+         - image: mysql:8
+           name: mysql
+           env:
             - name: MYSQL_ROOT_PASSWORD
-              value: {{ .Values.mysql.rootPassword | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.externalSecrets.k8sSecretName | quote }}
+                  key: password
             - name: MYSQL_DATABASE
               value: {{ .Values.mysql.database | quote }}
-          ports:
+           ports:
             - containerPort: 3306
               name: mysql
+
+
+
+#apiVersion: apps/v1
+#kind: Deployment
+#metadata:
+#  name: mysql
+#spec:
+#  selector:
+#    matchLabels:
+#      app: mysql
+#  strategy:
+#    type: Recreate
+#  template:
+#    metadata:
+#      labels:
+#        app: mysql
+#    spec:
+##      containers:
+##        - image: mysql:8
+##          name: mysql
+##          env:
+##            - name: MYSQL_ROOT_PASSWORD
+##              value: {{ .Values.mysql.rootPassword | quote }}
+##            - name: MYSQL_DATABASE
+##              value: {{ .Values.mysql.database | quote }}
+##          ports:
+##            - containerPort: 3306
+##              name: mysql
+#
+#        containers:
+#          - image: mysql:8
+#            name: mysql
+#            env:
+#              - name: MYSQL_ROOT_PASSWORD
+#                valueFrom:
+#                  secretKeyRef:
+#                    name: {{ .Values.externalSecrets.k8sSecretName | quote }}
+#                    key: password
+#              - name: MYSQL_DATABASE
+#                value: {{ .Values.mysql.database | quote }}
+#            ports:
+#              - containerPort: 3306
+#                name: mysql
+#

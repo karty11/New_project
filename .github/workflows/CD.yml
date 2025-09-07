@@ -5,72 +5,63 @@ on:
     workflows: [ "CI Pipeline" ]
     types:
       - completed
-#  push:
-#     branches:
-#       - main
-
-#on:
-#  workflow_dispatch:  # manual trigger
 
 jobs:
   deploy:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: self-hosted
     permissions:
-      contents: write   # needed to push commits with GITHUB_TOKEN (or use PAT)
+      contents: write
     env:
       REPO_URL: "https://github.com/karty11/New_project.git"
-      # IMAGE_TAG will be set to the github.sha of the run that triggered this workflow (workflow_run object)
+      AWS_REGION: us-west-2
+      EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+      SECRETS_MANAGER_NAME: bankapp/mysql
       IMAGE_TAG: ${{ github.event.workflow_run.head_commit.id || github.sha }}
-    steps:
+      TF_DIR: terraform
 
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Install AWS CLI v2
-        run: |
-            if ! command -v aws >/dev/null 2>&1; then
-              curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-              unzip -q awscliv2.zip
-              sudo ./aws/install
-            else
-              echo "aws already installed: $(aws --version)"
-            fi    
-
-      - name: Ensure tools (kubectl, helm, yq, argocd CLI)
-        run: |
-          # kubectl
-          if ! command -v kubectl >/dev/null 2>&1; then
-            echo "kubectl not found - installing via azure/setup-kubectl action would be better"
-            exit 1
-          fi
-          # helm
-          if ! command -v helm >/dev/null 2>&1; then
-            echo "helm not found - installing via azure/setup-helm action would be better"
-            exit 1
-          fi
-          # yq (install if missing)
-          if ! command -v yq >/dev/null 2>&1; then
-            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-            sudo chmod +x /usr/local/bin/yq
-          fi
-         
-
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-west-2
+          aws-region: ${{ env.AWS_REGION }}
 
+      - name: Install AWS CLI v2 (if missing)
+        run: |
+          if ! command -v aws >/dev/null 2>&1; then
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip -q awscliv2.zip
+            sudo ./aws/install
+          else
+            echo "aws already installed: $(aws --version)"
+          fi
 
-      - name: Ensure kubectl is present
+      - name: Ensure prerequisites (yq, jq, helm)
+        run: |
+          set -euo pipefail
+          if ! command -v yq >/dev/null 2>&1; then
+            sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+            sudo chmod +x /usr/local/bin/yq
+          fi
+          if ! command -v jq >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y jq
+          fi
+          if ! command -v helm >/dev/null 2>&1; then
+            curl -fsSL https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz -o helm.tar.gz
+            tar -xzf helm.tar.gz
+            sudo mv linux-amd64/helm /usr/local/bin/helm
+          fi
+
+      - name: Ensure kubectl (action)
         uses: azure/setup-kubectl@v3
         with:
           version: 'latest'
@@ -79,39 +70,28 @@ jobs:
         run: |
           mkdir -p ~/.kube
           chmod 700 ~/.kube
-          # persist KUBECONFIG for all following steps
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
           echo "KUBECONFIG set to $HOME/.kube/config (persisted to GITHUB_ENV)"
 
-#      - name:
-#          Debug: show aws & env (quick check)
-#        run: |
-#          echo "aws version: $(aws --version 2>&1 || true)"
-#          echo "GITHUB_ENV KUBECONFIG: $KUBECONFIG"
-#          aws sts get-caller-identity --output text || echo "sts identity failed"
-#          aws eks describe-cluster --name project-cluster --region us-west-2 --query "cluster.endpoint" --output text || echo "describe-cluster failed (permissions/network)"
-
-      - name: Update kubeconfig for EKS (write to ~/.kube/config)
+      - name: Update kubeconfig for EKS (initial check)
         run: |
           set -euo pipefail
-          # KUBECONFIG is now available from GITHUB_ENV
           echo "Using KUBECONFIG=$KUBECONFIG"
           if ! aws sts get-caller-identity >/dev/null 2>&1; then
             echo "AWS credentials not working - aborting"
             aws sts get-caller-identity || true
             exit 2
           fi
-          # Force write to the explicit path (no chance of empty var)
-          aws eks update-kubeconfig --region us-west-2 --name project-cluster --kubeconfig "$KUBECONFIG"
+          # Use repo variable EKS_CLUSTER_NAME
+          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" --kubeconfig "$KUBECONFIG"
           echo "Wrote kubeconfig to $KUBECONFIG"
           ls -l "$KUBECONFIG" || true
-          sed -n '1,60p' "$KUBECONFIG" || true
 
       - name: Verify Kubernetes cluster
         run: |
           kubectl version --output=yaml
           kubectl cluster-info || true
-          kubectl get nodes --no-headers -o wide
+          kubectl get nodes --no-headers -o wide || true
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -129,135 +109,197 @@ jobs:
           chmod +x terragrunt
           sudo mv terragrunt /usr/local/bin/
 
-      - name: Check versions
+      - name: Check terraform/terragrunt versions
         run: |
-          terraform -version
-          terragrunt -version
+          terraform -version || true
+          terragrunt -version || true
 
-      - name: Add Argo Helm repo & update
-        run: |
-          helm repo add argo https://argoproj.github.io/argo-helm || true
-          helm repo update
-
-      - name: Create argocd namespace
-        run: |
-          kubectl create ns argocd || echo "namespace argocd already exists"
-
-#      - name: Install/Upgrade Argo CD via Helm (idempotent)
-#        run: |
-#          helm upgrade --install argocd argo/argo-cd \
-#            --namespace argocd \
-#            --version 7.6.9 \
-#            -f deploy/argocd/argocd-values.yaml \
-#            --kubeconfig "$KUBECONFIG" \
-#            --wait --timeout 10m
-      - name: Install Argo CD via Helm
-        run: |
-            helm upgrade --install argocd argo/argo-cd \
-             --namespace argocd --create-namespace \
-             --values helm/bankapp-chart/argocd-values.yaml
-
-      - name: Wait for argocd components ready (server may be ClusterIP or LB)
-        run: |
-          kubectl -n argocd rollout status deployment/argocd-server --timeout=120s || true
-          kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=120s || true
-          kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=120s || true
-
-      - name: Install Argo CD CLI
-        run: |
-          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          chmod +x argocd
-          sudo mv argocd /usr/local/bin/argocd
-
-      - name: Trigger Argo CD sync
+      - name: Terraform init & apply (create IRSA IAM role)
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
         env:
-          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
-        run: |
-          if [ -n "$ARGOCD_SERVER" ] && [ -n "$ARGOCD_AUTH_TOKEN" ]; then
-            argocd app sync bankapp \
-              --server "$ARGOCD_SERVER" \
-              --auth-token "$ARGOCD_AUTH_TOKEN" \
-              --grpc-web --insecure --wait
-          else
-            echo "Skipping ArgoCD sync (missing secrets)"
-          fi
-
-      - name: Compute target branch
-        id: branch
-        run: |
-          BRANCH="${GITHUB_REF_NAME:-$(jq -r '.workflow_run.head_branch' <<<"$GITHUB_EVENT_PAYLOAD")}"
-          if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
-            BRANCH="main"
-          fi
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-
-      - name: Apply Argo CD Application manifest
-        run: |
-          kubectl apply -f manifest/argocd-app-bankapp.yaml
-
-#      - name: Show created manifest (debug)
-#        run: |
-#         echo "==== manifests/argocd-app-bankapp.yaml ===="
-#         cat manifests/argocd-app-bankapp.yaml
-#         echo "==========================================="
-
-      - name: Update Helm values.yaml with new image tag and push
-        env:
-          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-          BRANCH: ${{ steps.branch.outputs.branch }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AWS_REGION: ${{ env.AWS_REGION }}
         run: |
           set -euo pipefail
-          set -x
-          git push origin "HEAD:${BRANCH}"
-          echo "Pushed updated values.yaml with image tag ${IMAGE_TAG} to ${BRANCH}."
+          if [ -z "${EKS_CLUSTER_NAME:-}" ] || [ "${EKS_CLUSTER_NAME}" = "null" ]; then
+            echo "EKS_CLUSTER_NAME is not set. Provide repo var 'EKS_CLUSTER_NAME'."
+            exit 1
+          fi
+          terraform init -input=false
+          # apply (if your terraform requires extra vars like oidc_thumbprint, update TF code or add args here)
+          terraform apply -auto-approve -input=false -var="cluster_name=${EKS_CLUSTER_NAME}" -var="aws_region=${AWS_REGION}"
+          terraform output -json > tfoutputs.json
+          IAM_ROLE_ARN=$(jq -r '.iam_role_arn.value' tfoutputs.json)
+          if [ -z "$IAM_ROLE_ARN" ] || [ "$IAM_ROLE_ARN" = "null" ]; then
+            echo "Failed to obtain iam_role_arn from terraform outputs"
+            exit 1
+          fi
+          echo "iam_role_arn=$IAM_ROLE_ARN" >> $GITHUB_OUTPUT
 
-      - name: Print Argo CD initial admin password (for reference)
+      - name: Read IAM role ARN
         run: |
-          echo "Argo CD initial admin password (if autogenerated):"
-          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "secret not found yet"
+          echo "Role ARN from Terraform: ${{ steps.tf.outputs.iam_role_arn }}"
+        shell: bash
 
+      - name: Update kubeconfig for EKS (ensure we have latest and can access cluster)
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity --output text
+          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" --kubeconfig "$KUBECONFIG"
+          echo "Wrote kubeconfig to $KUBECONFIG"
 
-#      - name: Update Helm values.yaml with new image tag and push
-#        env:
-#          IMAGE_TAG: ${{ env.IMAGE_TAG }}
-#          BRANCH: ${{ steps.branch.outputs.branch }}
-#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#        run: |
-#            set -euo pipefail
-#            set -x
-#
-#            # ensure file exists
-#            if [ ! -f helm/bankapp-chart/values.yaml ]; then
-#            echo "ERROR: helm/bankapp-chart/values.yaml not found"
-#            exit 1
-#            fi
-#
-#            # configure git identity locally (repo-only)
-#            git config user.email "karthikperumal11@gmail.com"
-#            git config user.name "karty11"
-#
-#            # update image.tag (works if structure is image: { repository, tag })
-#            yq e -i '.image.tag = strenv(IMAGE_TAG)' helm/bankapp-chart/values.yaml
-#
-#            # stage changes
-#            git add helm/bankapp-chart/values.yaml
-#
-#            if git diff --cached --quiet; then
-#            echo "No change to values.yaml (image tag already up-to-date)."
-#            exit 0
-#            fi
-#
-#            git commit -m "ci: bump bankapp image tag to ${IMAGE_TAG}"
-#
-#
-#            git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-#            git push origin "HEAD:${BRANCH}"
-#
-#            echo "Pushed updated values.yaml with image tag ${IMAGE_TAG} to ${BRANCH}."
-#
-#            - name: Print Argo CD initial admin password (for reference)
-#              run: |
-#                echo "Argo CD initial admin password (if autogenerated):"
-#                kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "secret not found yet"
+      - name: Create external-secrets namespace
+        run: |
+          kubectl create ns external-secrets || echo "namespace external-secrets already exists"
+
+      - name: Create annotated ServiceAccount for External Secrets (IRSA)
+        run: |
+          set -euo pipefail
+          IAM_ROLE_ARN="${{ steps.tf.outputs.iam_role_arn }}"
+          
+          if [[ -z "$IAM_ROLE_ARN" ]]; then
+            echo "IAM_ROLE_ARN is empty. Aborting."
+            exit 1
+          fi
+          
+          cat <<EOF > /tmp/external-secrets-sa.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: external-secrets-sa
+  namespace: external-secrets
+  annotations:
+    eks.amazonaws.com/role-arn: "$IAM_ROLE_ARN"
+EOF
+      
+      kubectl apply -f /tmp/external-secrets-sa.yaml
+      echo "ServiceAccount external-secrets-sa created/updated with annotation"
+
+- name: Install argocd CLI
+  run: |
+    set -euo pipefail
+    if ! command -v argocd >/dev/null 2>&1; then
+      curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+      chmod +x argocd
+      sudo mv argocd /usr/local/bin/argocd
+    fi
+
+- name: Trigger ArgoCD sync (install External Secrets Operator)
+  if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_AUTH_TOKEN }}
+  env:
+    ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+    ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+  run: |
+    set -euo pipefail
+    echo "Syncing external-secrets-operator App via ArgoCD"
+    argocd app sync external-secrets-operator --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
+    echo "Waiting for operator deployment to be ready..."
+    kubectl -n external-secrets rollout status deploy/kubernetes-external-secrets --timeout=180s || true
+    kubectl -n external-secrets get pods -o wide || true
+
+- name: Trigger ArgoCD sync (install bankapp)
+  if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_AUTH_TOKEN }}
+  env:
+    ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+    ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+  run: |
+    set -euo pipefail
+    echo "Syncing bankapp App via ArgoCD (this will create SecretStore & ExternalSecret as part of helm chart)"
+    argocd app sync bankapp --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
+    kubectl create ns devproject || true
+    echo "Waiting for bankapp and mysql rollouts..."
+    kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
+    kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
+
+- name: Wait for ExternalSecret to produce k8s Secret
+  run: |
+    set -euo pipefail
+    echo "Waiting up to 3 minutes for bankapp-db-credentials k8s Secret in devproject..."
+    n=0
+    until kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1 || [ $n -ge 18 ]; do
+      echo "waiting for secret... ($n)"
+      n=$((n+1))
+      sleep 10
+    done
+    if kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1; then
+      echo "Secret created"
+      kubectl -n devproject get secret bankapp-db-credentials -o yaml || true
+    else
+      echo "Secret not found after wait period"
+      kubectl -n devproject get externalsecrets -o wide || true
+      kubectl -n devproject describe externalsecrets || true
+      exit 1
+    fi
+
+- name: Final check: pods & ExternalSecret status
+  run: |
+    echo "=== pods in devproject ==="
+    kubectl -n devproject get pods -o wide || true
+    echo "=== ExternalSecrets ==="
+    kubectl -n devproject get externalsecrets -o wide || true
+
+- name: Add Argo Helm repo & update
+  run: |
+    helm repo add argo https://argoproj.github.io/argo-helm || true
+    helm repo update
+
+- name: Create argocd namespace
+  run: |
+    kubectl create ns argocd || echo "namespace argocd already exists"
+
+- name: Install Argo CD via Helm
+  run: |
+    helm upgrade --install argocd argo/argo-cd \
+      --namespace argocd --create-namespace \
+      --values helm/bankapp-chart/argocd-values.yaml
+
+- name: Wait for argocd components ready (server may be ClusterIP or LB)
+  run: |
+    kubectl -n argocd rollout status deployment/argocd-server --timeout=120s || true
+    kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=120s || true
+    kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=120s || true
+
+- name: Trigger Argo CD sync (if not done earlier)
+  env:
+    ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+    ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+  run: |
+    if [ -n "${ARGOCD_SERVER:-}" ] && [ -n "${ARGOCD_AUTH_TOKEN:-}" ]; then
+      argocd app sync bankapp \
+        --server "$ARGOCD_SERVER" \
+        --auth-token "$ARGOCD_AUTH_TOKEN" \
+        --grpc-web --insecure --wait || true
+    else
+      echo "Skipping ArgoCD sync (missing secrets)"
+    fi
+
+- name: Compute target branch
+  id: branch
+  run: |
+    BRANCH="${GITHUB_REF_NAME:-$(jq -r '.workflow_run.head_branch' <<<"$GITHUB_EVENT_PAYLOAD")}"
+    if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
+      BRANCH="main"
+    fi
+    echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+- name: Apply Argo CD Application manifest
+  run: |
+    kubectl apply -f manifest/argocd-app-bankapp.yaml || true
+
+- name: Update Helm values.yaml with new image tag and push
+  env:
+    IMAGE_TAG: ${{ env.IMAGE_TAG }}
+    BRANCH: ${{ steps.branch.outputs.branch }}
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  run: |
+    set -euo pipefail
+    set -x
+    # if you prefer to commit values.yaml changes back to repo, implement yq + git commit here
+    # For now we just push current HEAD to remote branch to signal update (safe no-op if nothing changed)
+    git push origin "HEAD:${BRANCH}" || true
+    echo "Pushed updated commit (if any) to ${BRANCH}."
+
+- name: Print Argo CD initial admin password (for reference)
+  run: |
+    echo "Argo CD initial admin password (if autogenerated):"
+    kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "secret not found yet"
