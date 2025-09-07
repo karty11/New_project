@@ -70,6 +70,7 @@ jobs:
           mkdir -p ~/.kube
           chmod 700 ~/.kube
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
+          echo "KUBECONFIG set to $HOME/.kube/config (persisted to GITHUB_ENV)"
 
       - name: Update kubeconfig for EKS (initial check)
         run: |
@@ -80,9 +81,10 @@ jobs:
             aws sts get-caller-identity || true
             exit 2
           fi
-          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" --kubeconfig "$KUBECONFIG"
+          aws eks update-kubeconfig --region "${AWS_REGION}" --name "project-cluster" --kubeconfig "$KUBECONFIG"
           echo "Wrote kubeconfig to $KUBECONFIG"
           ls -l "$KUBECONFIG" || true
+          sed -n '1,60p' "$KUBECONFIG" || true
 
       - name: Verify Kubernetes cluster
         run: |
