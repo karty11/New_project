@@ -208,7 +208,7 @@ jobs:
             exit 1
           fi
 
-      - name: Final check: pods & ExternalSecret status
+      - name: Final check pods & ExternalSecret status
         run: |
           echo "=== pods in devproject ==="
           kubectl -n devproject get pods -o wide || true
