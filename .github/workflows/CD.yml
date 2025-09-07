@@ -225,8 +225,8 @@ jobs:
           fi
       - name: Install bankapp DB ExternalSecret & ClusterSecretStore
         run: |
-          kubectl apply -f helm\bankapp-chart\templates\clustersecretstore.yaml
-          kubectl apply -f helm\bankapp-chart\templates\externalsecret-db.yaml
+          kubectl apply -f helm/bankapp-chart/templates/clustersecretstore.yaml
+          kubectl apply -f helm/bankapp-chart/templates/externalsecret-db.yaml
 
       - name: Wait for ExternalSecret to produce k8s Secret
         run: |
