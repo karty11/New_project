@@ -14,9 +14,9 @@ jobs:
       contents: write
     env:
       REPO_URL: "https://github.com/karty11/New_project.git"
-      AWS_REGION: us-west-2
+      AWS_REGION: "us-west-2"
       EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
-      SECRETS_MANAGER_NAME: bankapp/mysql
+      SECRETS_MANAGER_NAME: "bankapp/mysql"
       IMAGE_TAG: ${{ github.event.workflow_run.head_commit.id || github.sha }}
       TF_DIR: "terraform"
 
