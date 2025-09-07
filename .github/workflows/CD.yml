@@ -154,28 +154,27 @@ jobs:
 
       - name: Create annotated ServiceAccount for External Secrets (IRSA)
         run: |
-            set -euo pipefail
-            IAM_ROLE_ARN="${{ steps.tf.outputs.iam_role_arn }}"
-            if [[ -z "$IAM_ROLE_ARN" ]]; then
-              echo "IAM_ROLE_ARN is empty. Aborting."
-              exit 1
-            fi
-            
-            cat <<'EOF' > /tmp/external-secrets-sa.yaml
-  apiVersion: v1
-  kind: ServiceAccount
-  metadata:
-    name: external-secrets-sa
-    namespace: external-secrets
-    annotations:
-    eks.amazonaws.com/role-arn: "__IAM_ROLE_ARN_PLACEHOLDER__"
-      EOF
-      # Replace placeholder with the actual ARN safely
-      sed -i "s|__IAM_ROLE_ARN_PLACEHOLDER__|${IAM_ROLE_ARN}|g" /tmp/external-secrets-sa.yaml
-      kubectl apply -f /tmp/external-secrets-sa.yaml
-      echo "ServiceAccount external-secrets-sa created/updated with annotation"
+          set -euo pipefail
+          IAM_ROLE_ARN="${{ steps.tf.outputs.iam_role_arn }}"
+          if [ -z "${IAM_ROLE_ARN:-}" ] || [ "${IAM_ROLE_ARN}" = "null" ]; then
+            echo "IAM_ROLE_ARN is empty. Aborting."
+            exit 1
+          fi
+          
+          # create namespace if needed (idempotent)
+          kubectl create ns external-secrets || true
+          
+          # create SA if it doesn't exist (idempotent)
+          if ! kubectl -n external-secrets get sa external-secrets-sa >/dev/null 2>&1; then
+            kubectl -n external-secrets create sa external-secrets-sa
+          fi
+          
+          # annotate (overwrite if exists)
+          kubectl -n external-secrets annotate sa external-secrets-sa eks.amazonaws.com/role-arn="${IAM_ROLE_ARN}" --overwrite
+          echo "ServiceAccount external-secrets-sa annotated with ${IAM_ROLE_ARN}"
+      
 
-#      - name: Install Argo CD CLI
+      #      - name: Install Argo CD CLI
 #        run: |
 #          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
 #          chmod +x argocd
