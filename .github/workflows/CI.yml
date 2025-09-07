@@ -1,10 +1,10 @@
 name: CI Pipeline
 
-#on:
-#  push:
-#    branches: [ "main" ]
 on:
-  workflow_dispatch:  # <-- manual trigger only
+  push:
+    branches: [ "main" ]
+#on:
+#  workflow_dispatch:  # <-- manual trigger only
 
 jobs:
   compile:
