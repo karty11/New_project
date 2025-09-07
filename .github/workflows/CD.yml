@@ -1,14 +1,16 @@
 name: CD Pipeline
 
+#on:
+#  workflow_run:
+#    workflows: [ "CI Pipeline" ]
+#    types:
+#      - completed
 on:
-  workflow_run:
-    workflows: [ "CI Pipeline" ]
-    types:
-      - completed
+  workflow_dispatch:  # <-- manual trigger only
 
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+#    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: self-hosted
     permissions:
       contents: write
@@ -19,15 +21,10 @@ jobs:
       SECRETS_MANAGER_NAME: "bankapp/mysql"
       IMAGE_TAG: ${{ github.event.workflow_run.head_commit.id || github.sha }}
       TF_DIR: "terraform"
-#    steps:
-#      - name: Checkout repository
-#        uses: actions/checkout@v4
-#        with:
-#          fetch-depth: 0
-#          persist-credentials: true
+
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4   -
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
@@ -84,7 +81,6 @@ jobs:
             aws sts get-caller-identity || true
             exit 2
           fi
-          # Use repo variable EKS_CLUSTER_NAME
           aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" --kubeconfig "$KUBECONFIG"
           echo "Wrote kubeconfig to $KUBECONFIG"
           ls -l "$KUBECONFIG" || true
@@ -128,7 +124,6 @@ jobs:
             exit 1
           fi
           terraform init -input=false
-          # apply (if your terraform requires extra vars like oidc_thumbprint, update TF code or add args here)
           terraform apply -auto-approve -input=false -var="cluster_name=${EKS_CLUSTER_NAME}" -var="aws_region=${AWS_REGION}"
           terraform output -json > tfoutputs.json
           IAM_ROLE_ARN=$(jq -r '.iam_role_arn.value' tfoutputs.json)
@@ -137,18 +132,6 @@ jobs:
             exit 1
           fi
           echo "iam_role_arn=$IAM_ROLE_ARN" >> $GITHUB_OUTPUT
-
-      - name: Read IAM role ARN
-        run: |
-          echo "Role ARN from Terraform: ${{ steps.tf.outputs.iam_role_arn }}"
-        shell: bash
-
-      - name: Update kubeconfig for EKS (ensure we have latest and can access cluster)
-        run: |
-          set -euo pipefail
-          aws sts get-caller-identity --output text
-          aws eks update-kubeconfig --region "${AWS_REGION}" --name "${EKS_CLUSTER_NAME}" --kubeconfig "$KUBECONFIG"
-          echo "Wrote kubeconfig to $KUBECONFIG"
 
       - name: Create external-secrets namespace
         run: |
@@ -162,76 +145,69 @@ jobs:
             echo "IAM_ROLE_ARN is empty. Aborting."
             exit 1
           fi
-          
-          # create namespace if needed (idempotent)
-          kubectl create ns external-secrets || true
-          
-          # create SA if it doesn't exist (idempotent)
-          if ! kubectl -n external-secrets get sa external-secrets-sa >/dev/null 2>&1; then
-            kubectl -n external-secrets create sa external-secrets-sa
-          fi
-          
-          # annotate (overwrite if exists)
+          # create SA if not exists
+          kubectl -n external-secrets get sa external-secrets-sa >/dev/null 2>&1 || kubectl -n external-secrets create sa external-secrets-sa
+          # annotate (overwrite idempotently)
           kubectl -n external-secrets annotate sa external-secrets-sa eks.amazonaws.com/role-arn="${IAM_ROLE_ARN}" --overwrite
           echo "ServiceAccount external-secrets-sa annotated with ${IAM_ROLE_ARN}"
-      
 
-      #      - name: Install Argo CD CLI
-#        run: |
-#          curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-#          chmod +x argocd
-#          sudo mv argocd /usr/local/bin/argocd
+      - name: Install argocd CLI
+        run: |
+          set -euo pipefail
+          if ! command -v argocd >/dev/null 2>&1; then
+            curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+            chmod +x argocd
+            sudo mv argocd /usr/local/bin/argocd
+          fi
 
       - name: Trigger ArgoCD sync (install External Secrets Operator)
         if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_AUTH_TOKEN }}
         env:
-         ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
-         run: |
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+        run: |
           set -euo pipefail
           echo "Syncing external-secrets-operator App via ArgoCD"
           argocd app sync external-secrets-operator --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
-          echo "Waiting for operator deployment to be ready..."
           kubectl -n external-secrets rollout status deploy/kubernetes-external-secrets --timeout=180s || true
           kubectl -n external-secrets get pods -o wide || true
 
       - name: Trigger ArgoCD sync (install bankapp)
         if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_AUTH_TOKEN }}
         env:
-         ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-         ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-         set -euo pipefail
-         echo "Syncing bankapp App via ArgoCD (this will create SecretStore & ExternalSecret as part of helm chart)"
-         argocd app sync bankapp --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
-         kubectl create ns devproject || true
-         echo "Waiting for bankapp and mysql rollouts..."
-         kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
-         kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
+          set -euo pipefail
+          echo "Syncing bankapp App via ArgoCD"
+          argocd app sync bankapp --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
+          kubectl create ns devproject || true
+          kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
+          kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
 
       - name: Wait for ExternalSecret to produce k8s Secret
         run: |
-            set -euo pipefail
-            echo "Waiting up to 3 minutes for bankapp-db-credentials k8s Secret in devproject..."
-            n=0
-            until kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1 || [ $n -ge 18 ]; do
+          set -euo pipefail
+          echo "Waiting up to 3 minutes for bankapp-db-credentials k8s Secret in devproject..."
+          n=0
+          until kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1 || [ $n -ge 18 ]; do
             echo "waiting for secret... ($n)"
             n=$((n+1))
             sleep 10
-            done
-            if kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1; then
+          done
+          if kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1; then
             echo "Secret created"
             kubectl -n devproject get secret bankapp-db-credentials -o yaml || true
-            else
+          else
             echo "Secret not found after wait period"
             kubectl -n devproject get externalsecrets -o wide || true
             kubectl -n devproject describe externalsecrets || true
             exit 1
-            fi
+          fi
 
-      - name:Final check: pods & ExternalSecret status
+      - name: Final check: pods & ExternalSecret status
         run: |
-          echo "pods in devproject"
+          echo "=== pods in devproject ==="
           kubectl -n devproject get pods -o wide || true
           echo "=== ExternalSecrets ==="
           kubectl -n devproject get externalsecrets -o wide || true
@@ -243,61 +219,59 @@ jobs:
 
       - name: Create argocd namespace
         run: |
-                kubectl create ns argocd || echo "namespace argocd already exists"
+          kubectl create ns argocd || echo "namespace argocd already exists"
 
       - name: Install Argo CD via Helm
         run: |
-                helm upgrade --install argocd argo/argo-cd \
-                  --namespace argocd --create-namespace \
-                  --values helm/bankapp-chart/argocd-values.yaml
+          helm upgrade --install argocd argo/argo-cd \
+            --namespace argocd --create-namespace \
+            --values helm/bankapp-chart/argocd-values.yaml
 
       - name: Wait for argocd components ready (server may be ClusterIP or LB)
         run: |
-                kubectl -n argocd rollout status deployment/argocd-server --timeout=120s || true
-                kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=120s || true
-                kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=120s || true
+          kubectl -n argocd rollout status deployment/argocd-server --timeout=120s || true
+          kubectl -n argocd rollout status deployment/argocd-repo-server --timeout=120s || true
+          kubectl -n argocd rollout status deployment/argocd-application-controller --timeout=120s || true
 
       - name: Trigger Argo CD sync (if not done earlier)
         env:
-                ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
-                ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
-                if [ -n "${ARGOCD_SERVER:-}" ] && [ -n "${ARGOCD_AUTH_TOKEN:-}" ]; then
-                argocd app sync bankapp \
-                --server "$ARGOCD_SERVER" \
-                --auth-token "$ARGOCD_AUTH_TOKEN" \
-                --grpc-web --insecure --wait || true
-                else
-                echo "Skipping ArgoCD sync (missing secrets)"
-                fi
+          if [ -n "${ARGOCD_SERVER:-}" ] && [ -n "${ARGOCD_AUTH_TOKEN:-}" ]; then
+            argocd app sync bankapp \
+              --server "$ARGOCD_SERVER" \
+              --auth-token "$ARGOCD_AUTH_TOKEN" \
+              --grpc-web --insecure --wait || true
+          else
+            echo "Skipping ArgoCD sync (missing secrets)"
+          fi
 
       - name: Compute target branch
         id: branch
         run: |
-                BRANCH="${GITHUB_REF_NAME:-$(jq -r '.workflow_run.head_branch' <<<"$GITHUB_EVENT_PAYLOAD")}"
-                if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
-                BRANCH="main"
-                fi
-                echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          BRANCH="${GITHUB_REF_NAME:-$(jq -r '.workflow_run.head_branch' <<<"$GITHUB_EVENT_PAYLOAD")}"
+          if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
+            BRANCH="main"
+          fi
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
 
       - name: Apply Argo CD Application manifest
         run: |
-                kubectl apply -f manifest/argocd-app-bankapp.yaml || true
+          kubectl apply -f manifest/argocd-app-bankapp.yaml || true
 
       - name: Update Helm values.yaml with new image tag and push
         env:
-                IMAGE_TAG: ${{ env.IMAGE_TAG }}
-                BRANCH: ${{ steps.branch.outputs.branch }}
-                GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-            set -euo pipefail
-            set -x
-            # if you prefer to commit values.yaml changes back to repo, implement yq + git commit here
-            # For now we just push current HEAD to remote branch to signal update (safe no-op if nothing changed)
-            git push origin "HEAD:${BRANCH}" || true
-            echo "Pushed updated commit (if any) to ${BRANCH}."
-            
+          set -euo pipefail
+          set -x
+          git push origin "HEAD:${BRANCH}" || true
+          echo "Pushed updated commit (if any) to ${BRANCH}."
+
       - name: Print Argo CD initial admin password (for reference)
         run: |
-                echo "Argo CD initial admin password (if autogenerated):"
-                kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "secret not found yet"
+          echo "Argo CD initial admin password (if autogenerated):"
+          kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d || echo "secret not found yet"
