@@ -1,5 +1,5 @@
 name: CD Pipeline
-
+#
 #on:
 #  workflow_run:
 #    workflows: [ "CI Pipeline" ]
@@ -70,7 +70,6 @@ jobs:
           mkdir -p ~/.kube
           chmod 700 ~/.kube
           echo "KUBECONFIG=$HOME/.kube/config" >> $GITHUB_ENV
-          echo "KUBECONFIG set to $HOME/.kube/config (persisted to GITHUB_ENV)"
 
       - name: Update kubeconfig for EKS (initial check)
         run: |
@@ -145,13 +144,11 @@ jobs:
             echo "IAM_ROLE_ARN is empty. Aborting."
             exit 1
           fi
-          # create SA if not exists
           kubectl -n external-secrets get sa external-secrets-sa >/dev/null 2>&1 || kubectl -n external-secrets create sa external-secrets-sa
-          # annotate (overwrite idempotently)
           kubectl -n external-secrets annotate sa external-secrets-sa eks.amazonaws.com/role-arn="${IAM_ROLE_ARN}" --overwrite
           echo "ServiceAccount external-secrets-sa annotated with ${IAM_ROLE_ARN}"
 
-      - name: Install argocd CLI
+      - name: Install argocd CLI (if missing)
         run: |
           set -euo pipefail
           if ! command -v argocd >/dev/null 2>&1; then
@@ -160,30 +157,36 @@ jobs:
             sudo mv argocd /usr/local/bin/argocd
           fi
 
-      - name: Trigger ArgoCD sync (install External Secrets Operator)
-        if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_AUTH_TOKEN }}
+      - name: Trigger ArgoCD sync - external-secrets-operator
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
           set -euo pipefail
-          echo "Syncing external-secrets-operator App via ArgoCD"
-          argocd app sync external-secrets-operator --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
-          kubectl -n external-secrets rollout status deploy/kubernetes-external-secrets --timeout=180s || true
-          kubectl -n external-secrets get pods -o wide || true
+          if [ -z "${ARGOCD_SERVER:-}" ] || [ -z "${ARGOCD_AUTH_TOKEN:-}" ]; then
+            echo "ARGOCD_SERVER or ARGOCD_AUTH_TOKEN not provided; skipping external-secrets-operator sync."
+          else
+            echo "Syncing external-secrets-operator App via ArgoCD"
+            argocd app sync external-secrets-operator --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
+            kubectl -n external-secrets rollout status deploy/kubernetes-external-secrets --timeout=180s || true
+            kubectl -n external-secrets get pods -o wide || true
+          fi
 
-      - name: Trigger ArgoCD sync (install bankapp)
-        if: ${{ secrets.ARGOCD_SERVER && secrets.ARGOCD_AUTH_TOKEN }}
+      - name: Trigger ArgoCD sync - bankapp
         env:
           ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
           ARGOCD_AUTH_TOKEN: ${{ secrets.ARGOCD_AUTH_TOKEN }}
         run: |
           set -euo pipefail
-          echo "Syncing bankapp App via ArgoCD"
-          argocd app sync bankapp --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
-          kubectl create ns devproject || true
-          kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
-          kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
+          if [ -z "${ARGOCD_SERVER:-}" ] || [ -z "${ARGOCD_AUTH_TOKEN:-}" ]; then
+            echo "ARGOCD_SERVER or ARGOCD_AUTH_TOKEN not provided; skipping bankapp sync."
+          else
+            echo "Syncing bankapp App via ArgoCD"
+            argocd app sync bankapp --server "$ARGOCD_SERVER" --auth-token "$ARGOCD_AUTH_TOKEN" --grpc-web --insecure --timeout 300
+            kubectl create ns devproject || true
+            kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
+            kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
+          fi
 
       - name: Wait for ExternalSecret to produce k8s Secret
         run: |
