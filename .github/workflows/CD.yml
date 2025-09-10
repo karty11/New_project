@@ -236,26 +236,51 @@ jobs:
             kubectl -n devproject rollout status deploy/bankapp --timeout=180s || true
             kubectl -n devproject rollout status deploy/mysql --timeout=180s || true
           fi
-
+      
       - name: Wait for ExternalSecret to produce k8s Secret
         run: |
-          set -euo pipefail
-          echo "Waiting up to 3 minutes for bankapp-db-credentials k8s Secret in devproject..."
-          n=0
-          until kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1 || [ $n -ge 18 ]; do
-            echo "waiting for secret... ($n)"
-            n=$((n+1))
-            sleep 10
-          done
-          if kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1; then
-            echo "Secret created"
-            kubectl -n devproject get secret bankapp-db-credentials -o yaml || true
-          else
-            echo "Secret not found after wait period"
-            kubectl -n devproject get externalsecrets -o wide || true
-            kubectl -n devproject describe externalsecrets || true
-            exit 1
-          fi
+         set -euo pipefail
+         echo "Waiting up to 3 minutes for ExternalSecret to become Ready in devproject..."
+
+         # Wait until the ExternalSecret reports Ready=True
+         if ! kubectl -n devproject wait --for=condition=Ready \
+           externalsecret/bankapp-db-externalsecret \
+           --timeout=180s; then
+         echo "ExternalSecret did not become Ready in time"
+         kubectl -n devproject get externalsecret bankapp-db-externalsecret -o yaml || true
+         exit 1
+         fi
+
+         echo "ExternalSecret is Ready. Checking for synced Secret..."
+
+         # Verify the Secret was created
+         if kubectl -n devproject get secret bankapp-db-externalsecret >/dev/null 2>&1; then
+         echo "Secret synced successfully"
+         kubectl -n devproject get secret bankapp-db-externalsecret -o yaml || true
+         else
+         echo "Secret not found even though ExternalSecret is Ready"
+         exit 1
+         fi
+
+      # - name: Wait for ExternalSecret to produce k8s Secret
+      #   run: |
+      #     set -euo pipefail
+      #     echo "Waiting up to 3 minutes for bankapp-db-credentials k8s Secret in devproject..."
+      #     n=0
+      #     until kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1 || [ $n -ge 18 ]; do
+      #       echo "waiting for secret... ($n)"
+      #       n=$((n+1))
+      #       sleep 10
+      #     done
+      #     if kubectl -n devproject get secret bankapp-db-credentials >/dev/null 2>&1; then
+      #       echo "Secret created"
+      #       kubectl -n devproject get secret bankapp-db-credentials -o yaml || true
+      #     else
+      #       echo "Secret not found after wait period"
+      #       kubectl -n devproject get externalsecrets -o wide || true
+      #       kubectl -n devproject describe externalsecrets || true
+      #       exit 1
+      #     fi
 
       - name: Final check pods & ExternalSecret status
         run: |
