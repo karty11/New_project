@@ -1,30 +1,76 @@
 replicaCount: 1
+
 image:
   repository: karty11/newbankapp
   tag: 6e3801f0943b7b85d3258a60bab085f055f0720f
+
 mysql:
-  rootPassword: "Test@123"
+  # Instead of storing creds here, only define DB name
   database: "bankappdb"
+  # k8s secret name to fetch root password
+  secretName: bankapp-db-externalsecret
+  rootPasswordKey: password   # key inside the secret
+  usernameKey: username       # key inside the secret
+
 service:
   type: LoadBalancer
   port: 80
+
 resources: {}
 
 externalSecrets:
   enabled: true
-  # name of k8s Secret to be created by ExternalSecret:
-  k8sSecretName: bankapp-db-credentials
-  # name of secret in AWS Secrets Manager (or SSM) that holds DB creds
-  # expected keys inside AWS secret: username, password
-  providerSecretName: bankapp/mysql     # example: "bankapp/mysql" in Secrets Manager
-  # sync behavior: Create k8s Secret with stringData keys mapping
+  k8sSecretName: bankapp-db-externalsecret
+  providerSecretName: bankapp/mysql
   refreshInterval: 1m
-  # AWS region for SecretStore
   awsRegion: us-west-2
-
   irsa:
     enabled: true
-    namespace: external-secrets         # namespace where operator runs (change if different)
+    namespace: external-secrets
     serviceAccountName: external-secrets-sa
-    # Set to the role ARN you create (placeholder here)
-    iamRoleArn: arn:aws:iam::439499528500:role/external-secrets-role
+    iamRoleArn: arn:aws:iam::439499528500:role/external-secrets-irsa
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# replicaCount: 1
+# image:
+#   repository: karty11/newbankapp
+#   tag: 6e3801f0943b7b85d3258a60bab085f055f0720f
+# mysql:
+#   rootPassword: "Test@123"
+#   database: "bankappdb"
+# service:
+#   type: LoadBalancer
+#   port: 80
+# resources: {}
+
+# externalSecrets:
+#   enabled: true
+#   # name of k8s Secret to be created by ExternalSecret:
+#   k8sSecretName: bankapp-db-credentials
+#   # name of secret in AWS Secrets Manager (or SSM) that holds DB creds
+#   # expected keys inside AWS secret: username, password
+#   providerSecretName: bankapp/mysql     # example: "bankapp/mysql" in Secrets Manager
+#   # sync behavior: Create k8s Secret with stringData keys mapping
+#   refreshInterval: 1m
+#   # AWS region for SecretStore
+#   awsRegion: us-west-2
+
+#   irsa:
+#     enabled: true
+#     namespace: external-secrets         # namespace where operator runs (change if different)
+#     serviceAccountName: external-secrets-sa
+#     # Set to the role ARN you create (placeholder here)
+#     iamRoleArn: arn:aws:iam::439499528500:role/external-secrets-role
