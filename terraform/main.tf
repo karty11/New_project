@@ -110,7 +110,7 @@ resource "aws_iam_role_policy" "external_secrets_access" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ]
-        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:my-secret-*"
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:bankapp/mysql*"
       },
       {
         Sid = "AllowKMSDecryptIfNeeded"
