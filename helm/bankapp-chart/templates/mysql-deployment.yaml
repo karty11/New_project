@@ -20,10 +20,10 @@ spec:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.externalSecrets.k8sSecretName | quote }}
+                  name: bankapp-db-externalsecret
                   key: password
             - name: MYSQL_DATABASE
-              value: {{ .Values.mysql.database | quote }}
+              value: bankappdb
            ports:
             - containerPort: 3306
               name: mysql
