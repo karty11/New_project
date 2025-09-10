@@ -19,16 +19,16 @@ spec:
             - containerPort: 8080
           env:
             - name: SPRING_DATASOURCE_URL
-              value: jdbc:mysql://mysql-service:3306/{{ .Values.mysql.database }}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+              value: jdbc:mysql://mysql-service:3306/bankappdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.externalSecrets.k8sSecretName | quote }}
+                  name: bankapp-db-externalsecret
                   key: username
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.externalSecrets.k8sSecretName | quote }}
+                  name: bankapp-db-externalsecret
                   key: password
 
 
