@@ -66,7 +66,8 @@ resource "aws_iam_role" "external_secrets_irsa" {
           StringEquals = {
             # replace <oidc-provider-host> with issuer host without https://
             # e.g. "oidc.eks.<region>.amazonaws.com/id/XXXXXXXXXXXX:sub" = "system:serviceaccount:<namespace>:<sa-name>"
-            (local.oidc_sub_key) = "system:serviceaccount:external-secrets:external-secrets"
+            (local.oidc_sub_key) = "system:serviceaccount:external-secrets:external-secrets-sa"
+
           }
         }
       }
