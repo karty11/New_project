@@ -162,11 +162,7 @@ jobs:
             fi
           done
           echo "Unmanaged CRDs cleaned: $unmanaged_crds"
-          
-      - name: Install bankapp DB ExternalSecret & ClusterSecretStore
-        run: |
-          kubectl apply -f helm/bankapp-chart/templates/clustersecretstore.yaml
-          
+
       - name: Install External Secrets Operator via Helm (with CRDs)
         run: |
           helm repo add external-secrets https://charts.external-secrets.io
@@ -174,7 +170,12 @@ jobs:
           helm upgrade --install external-secrets external-secrets/external-secrets \
             --namespace external-secrets \
             --create-namespace \
-            --set installCRDs=true
+            --set installCRDs=true    
+          
+      - name: Install bankapp DB ExternalSecret & ClusterSecretStore
+        run: |
+          kubectl apply -f helm/bankapp-chart/templates/clustersecretstore.yaml
+         
 
       - name: Create annotated ServiceAccount for External Secrets (IRSA)
         run: |
