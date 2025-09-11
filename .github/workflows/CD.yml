@@ -5,8 +5,8 @@ name: CD Pipeline
 #    workflows: [ "CI Pipeline" ]
 #    types:
 # #      - completed
-# on:
-#   workflow_dispatch:  # <-- manual trigger only
+on:
+  workflow_dispatch:  # <-- manual trigger only
 
 jobs:
   deploy:
